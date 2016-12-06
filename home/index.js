@@ -8,14 +8,15 @@ import LogIn from '../login/index';
 import SignedIn from '../signedin/index';
 require('es6-promise').polyfill();
 require('isomorphic-fetch');
-let turnCounter = 0;
 
 class PairSwitching extends React.Component{
 
   constructor(props) {
     super(props);
     this.state = {
-      secondsRemaining: 10,
+      time: {},
+      seconds: 5,
+      secondsValue: '',
       switchedTurnCounter: 0,
       logIn: false,
       signUp: true,
@@ -25,11 +26,33 @@ class PairSwitching extends React.Component{
       slackNameValue: '',
       pairNameValue: '',
       usersArray: [],
-      mappedPairsObject: [],
+      mappedPairsObject: {},
+      timer: 0
     };
+
     this.startTimer = this.startTimer.bind(this);
     this.decidePair = this.decidePair.bind(this);
-  }
+    this.countDown = this.countDown.bind(this);
+    this.postToSlack = this.postToSlack.bind(this);
+  };
+
+   testfunc(){
+     return new Promise((resolve, reject) => {
+      resolve(this.retrieveUsers());
+     })
+   };
+
+  componentDidMount = () => {
+    if (document.cookie.length > 0){
+      this.setState({ signedIn: true })
+    }
+    this.testfunc().then(() => {
+      return this.mapPairs();
+    }).then(() =>{
+      let timeLeftVar = this.secondsToTime(this.state.secondsValue);
+      return this.setState({ time: timeLeftVar });
+    });
+  };
 
   pullPairs = (query) => {
     return new Promise((resolve, reject) => {
@@ -37,17 +60,33 @@ class PairSwitching extends React.Component{
       })
   };
 
+
+  getCookie = (cname) => {
+      var name = cname + "=";
+      var ca = document.cookie.split(';');
+      for(var i = 0; i <ca.length; i++) {
+          var c = ca[i];
+          while (c.charAt(0)==' ') {
+              c = c.substring(1);
+          }
+          if (c.indexOf(name) == 0) {
+              return c.substring(name.length,c.length);
+          }
+      }
+      return "";
+  }
+
   retrieveUsers = () => {
     return new Promise((resolve, reject) => {
       this.pullPairs('/pairs/').then((allUsers) => {
         let usersArray = Object.keys(allUsers.val()).map(function(key) {
           return allUsers.val()[key];
         });
+        var cookieValue = document.cookie.split('=')[1];
         this.setState({usersArray: usersArray});
-        let cookie_value = document.cookie.split('=')[1];
-        for (var i = 0; i < this.state.usersArray.length; i++) {
-          if (this.state.usersArray[i].useruid == cookie_value){
-            let loggedInUser = this.state.usersArray[i];
+        for (var i = 0; i < usersArray.length; i++) {
+          if (usersArray[i].useruid == cookieValue){
+            let loggedInUser = usersArray[i];
             this.setState({loggedInUser: loggedInUser})
           };
         }
@@ -56,15 +95,7 @@ class PairSwitching extends React.Component{
     })
   };
 
-
-  testfunc(){
-    return new Promise((resolve, reject) => {
-      resolve(this.retrieveUsers());
-    })
-  };
-
   decidePair = () => {
-    let interval = setInterval(this.timer, 1000);
     let name = this.state.nameValue;
     let slackName = this.state.slackNameValue;
     let email = this.state.emailValue;
@@ -79,46 +110,74 @@ class PairSwitching extends React.Component{
     });
   };
 
-  startTimer = () => {
-    this.setState({ secondsRemaining: this.state.secondsRemaining })
-    this.setState({ interval: interval });
+  startTimer = (pairName) => {
+    if (this.state.timer == 0) {
+      this.setState({
+        timer: this.state.secondsValue * 60
+      })
+      this.state.interval = setInterval(this.countDown, 1000);
+    }
   };
 
-  componentDidMount = () => {
-    this.retrieveUsers();
+  resetTimer = (pairName) => {
+    let seconds = 5;
+    this.setState({
+      time: this.secondsToTime(seconds),
+      seconds: seconds,
+    });
   };
+
+  countDown = () => {
+    let seconds = this.state.timer - 1;
+    this.setState({
+      timer: this.state.timer - 1,
+      time: this.secondsToTime(seconds),
+      seconds: seconds,
+    });
+    if (seconds == 0) {
+      clearInterval(this.state.interval);
+      this.postToSlack();
+    }
+  };
+
+  secondsToTime(secs){
+    let hours = Math.floor(secs / (60 * 60));
+    let divisorForMinutes = secs % (60 * 60);
+    let minutes = Math.floor(divisorForMinutes / 60);
+    let divisorForSeconds = divisorForMinutes % 60;
+    let seconds = Math.ceil(divisorForSeconds);
+
+    let obj = {
+      "h": hours,
+      "m": minutes,
+      "s": seconds
+    };
+    return obj;
+  }
 
   componentWillUnmount = () => {
-    clearInterval(this.state.interval);
+    clearInterval(this.timer);
   };
 
-  timer = () => {
-    if (this.state.secondsRemaining >0){
-      this.setState({ secondsRemaining: this.state.secondsRemaining -1 });
-    }
-    else {
-      clearInterval(this.state.interval);
-      //this.postToSlack();
-    }
-  };
-
-  resetTimer = () => {
-    this.setState({ secondsRemaining: 10 });
+  logOut = () => {
+    document.cookie = "useruid=; expires=Thu, 01 Jan 2000 00:00:00 GMT";
+    this.setState({ signUp: true })
+    this.setState({ signedIn: false })
   };
 
   postToSlack = () => {
     this.setState({switchedTurnCounter: this.state.switchedTurnCounter + 1});
-    turnCounter += 1;
+    console.log(this.state.switchedTurnCounter, 'turn counter **');
     let Slack = require('browser-node-slack');
-    let slackName = this.state.nameValue;
-    let pairSlackName = this.state.pairNameValue;
+    let name = this.state.loggedInUser.name;
+    let pairName = this.state.pairNameValue;
     let slack = new Slack('https://hooks.slack.com/services/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');
-    if (turnCounter % 2 == 0){
+    if (this.state.switchedTurnCounter % 2 == 0){
       slack.send({
         channel: "#rich-test-public",
         username: "pear-bot",
         icon_emoji: ":pear:",
-        text: slackName + ' has started driving, enjoy the ride!'
+        text: name + ' has started driving, enjoy the ride!'
       });
     }
     else {
@@ -126,7 +185,7 @@ class PairSwitching extends React.Component{
         channel: "#rich-test-public",
         username: "pear-bot",
         icon_emoji: ":pear:",
-        text: pairSlackName + ' has started driving, enjoy the ride!'
+        text: pairName + ' has started driving, enjoy the ride!'
       });
     }
   };
@@ -148,17 +207,14 @@ class PairSwitching extends React.Component{
   };
 
   submitPairToDatabase = (useruid, pairName) => {
-    return new Promise((resolve, reject) => {
-      let postData = {
-        pairName: pairName
-      };
-      let newPostKey = firebase.database().ref().child('date').push().key;
-      let updates = {};
-      updates['pairs/' + useruid + '/'  + 'date' + '/'] = postData;
-      firebase.database().ref().update(updates, function(data){
-        resolve();
-      });
-    })
+    let postData = {
+      pairName: pairName
+    };
+    let newPostKey = firebase.database().ref().child('date').push().key;
+    let updates = {};
+    updates['pairs/' + useruid + '/'  + 'date' + '/'] = postData;
+    firebase.database().ref().update(updates, function(data){
+    });
   };
 
   mapPairs = () => {
@@ -204,6 +260,10 @@ class PairSwitching extends React.Component{
 
   handlePairNameChange = (event) => {
     this.setState({pairNameValue: event.target.value})
+  };
+
+  handleSeconds = (event) => {
+    this.setState({secondsValue: event.target.value})
   };
 
   signUserUp = () => {
@@ -262,13 +322,17 @@ class PairSwitching extends React.Component{
           startTimer={this.startTimer.bind(this)}
           decidePair={this.decidePair.bind(this)}
           resetTimer={this.resetTimer.bind(this)}
+          logOut={this.logOut.bind(this)}
           handlePairNameChange={this.handlePairNameChange.bind(this)}
+          handleSeconds={this.handleSeconds.bind(this)}
+          secondsValue={this.state.secondsValue}
           nameValue={this.state.nameValue}
           slackNameValue={this.state.slackNameValue}
           emailValue={this.state.emailValue}
           pairNameValue={this.state.pairNameValue}
           mappedPairsObject={this.state.mappedPairsObject}
           secondsRemaining={this.state.secondsRemaining}
+          time={this.state.time}
         />
         :
         <div>
