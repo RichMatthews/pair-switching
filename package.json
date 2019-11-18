@@ -19,7 +19,7 @@
   },
   "homepage": "https://github.com/RichMatthews/pair-switching#readme",
   "devDependencies": {
-    "axios": "^0.15.2",
+    "axios": "^0.19.0",
     "babel": "^6.5.2",
     "babel-core": "^6.13.1",
     "babel-loader": "^6.0.1",
