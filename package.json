@@ -30,7 +30,7 @@
     "chai": "^3.5.0",
     "css-loader": "^0.25.0",
     "enzyme": "^2.5.1",
-    "eslint": "^3.8.1",
+    "eslint": "^6.6.0",
     "firebase": "^3.6.0",
     "jasmine": "^2.5.2",
     "jsdom": "^9.4.1",
